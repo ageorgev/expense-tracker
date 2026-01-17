@@ -7,6 +7,21 @@ public class Utilities {
     public static String encrypt(String plainText) {
         PooledPBEStringEncryptor encryptor = new PooledPBEStringEncryptor();
         SimpleStringPBEConfig config = new SimpleStringPBEConfig();
+        /**
+         * Important: The master key must be set as an environment variable
+         * named 'JASYPT_ENCRYPTOR_PASSWORD'. If not found, the program will exit with an error message.
+         * 1. Open the JSON Settings
+         * Press Ctrl + Shift + P (Windows/Linux) or Cmd + Shift + P (macOS) to open the Command Palette.
+         *
+         * Type "Open User Settings (JSON)" and press Enter.
+         * To set the environment variable in VSCode, add the following line to your settings.json:
+         * 
+         * "terminal.integrated.env.osx": {
+         *     "JASYPT_ENCRYPTOR_PASSWORD": "your_master_key_here"
+         * }   
+         * For Windows, use "terminal.integrated.env.windows"
+         * For Linux, use "terminal.integrated.env.linux"     
+         */
         String masterKey = System.getenv("JASYPT_ENCRYPTOR_PASSWORD");
         if (masterKey == null || masterKey.isEmpty()) {
             System.err.println("Error: Environment variable 'JASYPT_ENCRYPTOR_PASSWORD' not found!");
