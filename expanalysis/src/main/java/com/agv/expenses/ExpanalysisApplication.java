@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class ExpanalysisApplication {
 
 	public static void main(String[] args) {
+		System.out.println(System.getenv("JASYPT_ENCRYPTOR_PASSWORD"));
 		SpringApplication.run(ExpanalysisApplication.class, args);
 	}
 
