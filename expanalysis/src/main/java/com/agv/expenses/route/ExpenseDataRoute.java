@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.agv.expenses.processor.GoogleSheetsWriteProcessor;
+import com.agv.expenses.processor.ICICISacStmtPDFProcessor;
 import com.agv.expenses.processor.ICICITransactionProcessor;
 import com.agv.expenses.processor.PhonePePDFProcessor;
 import com.agv.expenses.processor.PhonePePDFProcessorGSheets;
@@ -25,10 +26,14 @@ public class ExpenseDataRoute extends RouteBuilder {
         private String spreadsheetId;
         @PropertyInject("sbi.pdf.password")
         private String sbiPDFPassword;
+        @PropertyInject("icici.pdf.password")
+        private String iciciPDFPassword;
         @Autowired
         private ICICITransactionProcessor iciciTransactionProcessor;
         @Autowired
         private SBIPDFStatementProcessor sbiPDFStatementProcessor;
+        @Autowired
+        private ICICISacStmtPDFProcessor iciciPDFStmtProcessor;
 
         @Override
         public void configure() throws Exception {
@@ -44,7 +49,7 @@ public class ExpenseDataRoute extends RouteBuilder {
                                 .to("direct:processSBIPDFTransactions")
                                 .process(new GoogleSheetsWriteProcessor())
                                 // Writing to Google Sheets
-                                .to("google-sheets://data/append?valueInputOption=USER_ENTERED")
+                                // .to("google-sheets://data/append?valueInputOption=USER_ENTERED")
                                 .log("Data successfully appended to Google Sheets!");
 
                 from("direct:processSanthomeTransactions")
@@ -66,11 +71,24 @@ public class ExpenseDataRoute extends RouteBuilder {
                                                 exchange.getIn().setBody(text);
                                         }
                                 })
-                                //.log("${body}")
+                                // .log("${body}")
                                 // .convertBodyTo(byte[].class)
                                 // .to("pdf:extractText")
                                 // .log("Extracted Body: ${body}")
                                 .process(sbiPDFStatementProcessor)
                                 .log("Successfully unmarshalled Excel workbook!");
+
+                from("file:{{data.input.folder}}?include={{icici.pdf.file.pattern}}&noop=true")
+                                .log("Reading file: ${header.CamelFileName}")
+                                .process(exchange -> {
+                                        byte[] pdfBytes = exchange.getIn().getBody(byte[].class);
+                                        try (PDDocument document = Loader.loadPDF(pdfBytes, iciciPDFPassword)) {
+                                                PDFTextStripper stripper = new PDFTextStripper();
+                                                String text = stripper.getText(document);
+                                                exchange.getIn().setBody(text);
+                                        }
+                                })
+                                .process(iciciPDFStmtProcessor)
+                                .log("Extracted Body: ${body}");
         }
 }
