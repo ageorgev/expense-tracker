@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.apache.camel.PropertyInject;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.rest.RestBindingMode;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
@@ -18,6 +19,9 @@ import com.agv.expenses.processor.ICICITransactionProcessor;
 import com.agv.expenses.processor.PhonePePDFProcessor;
 import com.agv.expenses.processor.PhonePePDFProcessorGSheets;
 import com.agv.expenses.processor.SBIPDFStatementProcessor;
+import com.agv.expenses.service.model.Health;
+import com.agv.expenses.service.model.StatementProcessRequest;
+import com.agv.expenses.service.model.StatementProcessResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
 @Component
@@ -37,6 +41,43 @@ public class ExpenseDataRoute extends RouteBuilder {
 
         @Override
         public void configure() throws Exception {
+                /** ############### REST Configurations ########################## */
+                // Configure REST to use JSON (Jackson)
+                restConfiguration()
+                                .component("servlet")
+                                .bindingMode(RestBindingMode.json)
+                                .contextPath("/expense");
+
+                // Define REST endpoint
+                rest("/api")
+                                .post("/processMessage")
+                                .type(StatementProcessRequest.class) // incoming JSON → Request
+                                .outType(StatementProcessResponse.class) // outgoing Response → JSON
+                                .to("direct:processRequest");
+                              
+                // Extended Health endpoint
+                rest("/api")
+                                .get("/health")
+                                .to("direct:health");
+
+                from("direct:health")
+                                .process(e -> {
+                                        var ctx = e.getContext();
+                                        boolean camelUp = ctx != null && ctx.isStarted();
+                                        e.getMessage().setHeader(org.apache.camel.Exchange.CONTENT_TYPE,
+                                                        "application/json");
+                                        e.getMessage().setBody(Health.builder().status("UP").camel(camelUp ? "STARTED" : "STOPPED").build());
+                                });
+
+                // Actual processor route
+                from("direct:processRequest")
+                                .process(exchange -> {
+                                        StatementProcessRequest req = exchange.getIn()
+                                                        .getBody(StatementProcessRequest.class);
+                                        exchange.getMessage().setBody(StatementProcessResponse.builder()
+                                                        .status("Success " + req.getMessageId()).build());
+                                });
+                /** ############### END of REST Configurations ########################## */
                 from("file:{{data.input.folder}}?include=.*StmtPDF.pdf&noop=true")
                                 .log("Reading file: ${header.CamelFileName}")
                                 .convertBodyTo(byte[].class)
