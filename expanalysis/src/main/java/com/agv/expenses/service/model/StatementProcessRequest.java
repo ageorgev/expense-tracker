@@ -9,6 +9,7 @@ import java.io.Serializable;
 public class StatementProcessRequest implements Serializable{
     
     private String messageId;
-    private String filePath;
+    private String fileUrl;
+    private String fileId;
 
 }

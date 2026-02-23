@@ -19,6 +19,8 @@ import org.springframework.boot.autoconfigure.pulsar.PulsarProperties.Transactio
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import com.agv.expenses.service.model.PDFExtractPayload;
+import com.agv.expenses.util.DatePattern;
 import com.agv.expenses.util.ExpenseUtil;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
@@ -36,7 +38,6 @@ public class ICICISacStmtPDFProcessor implements Processor {
     private static final String START_PATTERN = "^\\d{2}-\\d{2}-\\d{4}.*";
     private static final String PAGE_END_PATTERN = "^Total:\\s";
     private static final String FIELD_SEP_TOKEN = "###";
-    private static final int ROW_ARR_LENGTH = 11;
     private static final int DATE_STR_LENGTH = 10;
     @Value("#{${icici.account.map}}")
     private Map<String, String> accountNameMap;
@@ -122,8 +123,8 @@ public class ICICISacStmtPDFProcessor implements Processor {
                 }
                 rawMsgString = new StringBuffer();
                 txnDescString = new StringBuffer();
-                rowDataStrArr = new String[ROW_ARR_LENGTH];
-                rowDataStrArr[1] = ("".equals(accountNo))?"estatement.icicibank.com" : accountNameMap.get(accountNo);
+                rowDataStrArr = new String[ExpenseUtil.DATA_ARRAY_SIZE];
+                rowDataStrArr[1] = ("".equals(accountNo)) ? "estatement.icicibank.com" : accountNameMap.get(accountNo);
                 // if length is matching that of date then processing this line is over
                 if (rawLine.length() == DATE_STR_LENGTH) {
                     rowDataStrArr[0] = rawLine;
@@ -167,6 +168,7 @@ public class ICICISacStmtPDFProcessor implements Processor {
                     String spaces = txtAmountsLineMather.group(2);
                     String balanceAmount = txtAmountsLineMather.group(3);
                     String type = (spaces.length() == 1) ? "DEBIT" : "CREDIT";
+                    rowDataStrArr[11] = type;
                     rawMsgString.append(txnDescString).append(FIELD_SEP_TOKEN)
                             .append(transactionAmount).append(FIELD_SEP_TOKEN)
                             .append(type).append(FIELD_SEP_TOKEN)
@@ -187,6 +189,19 @@ public class ICICISacStmtPDFProcessor implements Processor {
 
         }
         LOG.info("Completed Processing");
+        PDFExtractPayload[] payLoadArr = new PDFExtractPayload[allRows.size()];
+        int rowIdx = 0;
+        for (String[] currentRow : allRows) {
+            PDFExtractPayload payLd = PDFExtractPayload.builder().txnDate(currentRow[0]).from(currentRow[1])
+                    .to(currentRow[2]).subject(currentRow[3]).paidTo(currentRow[4]).amount(currentRow[5])
+                    .bodyCleaned(currentRow[6]).subscriberID(currentRow[7]).orderID(currentRow[8]).link(currentRow[9])
+                    .message(currentRow[10]).transactionFlag(currentRow[11]).build();
+            var reptDate=ExpenseUtil.convertStrngDateFormat(payLd.getTxnDate(), DatePattern.ICICI_SAC_DATE, DatePattern.REPORT_DATE);
+            payLd.setTxnDate(reptDate);
+            payLd.validate();
+            payLoadArr[rowIdx++] = payLd;
+        }
+        exchange.setProperty(ExpenseUtil.EXCH_PROPERTY_RES_PAYLOAD, payLoadArr);
         // TODO Adding last row
 
     }

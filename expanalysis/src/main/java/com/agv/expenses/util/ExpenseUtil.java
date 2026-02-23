@@ -1,9 +1,13 @@
 package com.agv.expenses.util;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Locale;
+import java.util.Date;
+import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +31,8 @@ public class ExpenseUtil {
      * 11. Flag
      */
     public static final int DATA_ARRAY_SIZE = 12;
+    public static final String EXCH_PROPERTY_RES_PAYLOAD = "EXCH_PROPERTY_RES_PAYLOAD";
+    public static final String EXCH_HEADER_PROPERTY_PDF_FILE_ID = "CamelGoogleDrive.fileId";
 
     public static String reformatDate(String inputDate) {
 
@@ -78,4 +84,75 @@ public class ExpenseUtil {
         return dataArr;
     }
 
+    public static LocalDate convertStringToDate(String strDate, DatePattern datePattern) {
+        if (strDate == null || datePattern == null || strDate.isBlank()) {
+            return null;
+        }
+        try {
+            // This will parse the string EXACTLY as written.
+            // No timezone math will ever occur.
+            return LocalDate.parse(strDate, datePattern.getFormatter());
+        } catch (DateTimeParseException e) {
+            // Handle or log the error
+            throw new IllegalArgumentException("Input Date: " + strDate+" Not as per format "+datePattern.getPattern());
+        }
+    }
+
+    public static String convertStrngDateFormat(String strDate, DatePattern inPattern, DatePattern ouDatePattern){
+        if (strDate == null || inPattern == null || strDate.isBlank() || ouDatePattern == null) {
+            return strDate;
+        }
+        return toDateString(convertStringToDate(strDate,inPattern),ouDatePattern);
+    }
+
+    public static String toDateString(LocalDate date, DatePattern pattern) {
+        return (date == null) ? null : date.format(pattern.getFormatter());
+    }
+/**
+     * Generates a unique Order ID string.
+     * @param date The LocalDate (e.g., 2026-02-23)
+     * @param amountStr The raw string (e.g., " 4,234.02 ")
+     * @return String in format yyyyMMddamt
+     * @throws IllegalArgumentException if amount is invalid or null
+     */
+    public static String generateOrderId(LocalDate date, String amountStr) {
+        // 1. Basic Null Checks
+        Objects.requireNonNull(date, "Date cannot be null");
+        
+        if (amountStr == null ) {
+            throw new IllegalArgumentException("Amount string cannot be null or empty");
+        }
+        if(amountStr.isBlank())
+        {
+            amountStr="0";
+        }
+
+        // 2. Clean and Trim the input
+        // Remove commas and whitespace; keep periods for decimal parsing
+        String cleanedAmount = amountStr.trim().replace(",", "");
+
+        BigDecimal amount;
+        try {
+            // 3. Convert to BigDecimal
+            amount = new BigDecimal(cleanedAmount);
+            
+            // 4. Validation: No negative amounts for Order IDs
+            if (amount.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Amount cannot be negative: " + amountStr);
+            }
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid numeric format for amount: " + amountStr);
+        }
+
+        // 5. Format the Date (yyyyMMdd)
+        String datePart = toDateString(date,DatePattern.ORDER_ID_DATE);
+
+        // 6. Format the Amount
+        // Scale to 2 decimal places, remove the dot to get "cents" representation
+        String amountPart = amount.setScale(2, RoundingMode.HALF_UP)
+                                  .toPlainString()
+                                  .replace(".", "");
+
+        return datePart + amountPart;
+    }
 }
