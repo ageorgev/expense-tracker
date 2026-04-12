@@ -1,5 +1,7 @@
 package com.agv.expenses.util;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -32,7 +34,9 @@ public class ExpenseUtil {
      */
     public static final int DATA_ARRAY_SIZE = 12;
     public static final String EXCH_PROPERTY_RES_PAYLOAD = "EXCH_PROPERTY_RES_PAYLOAD";
+    public static final String EXCH_PROPERTY_RES_ERR_LIST = "EXCH_PROPERTY_RES_ERR_LIST";
     public static final String EXCH_HEADER_PROPERTY_PDF_FILE_ID = "CamelGoogleDrive.fileId";
+    public static final String EXCH_HEADER_PROPERTY_EMAIL_MSG_ID = "EXCH_HEADER_PROPERTY_EMAIL_MSG_ID";
 
     public static String reformatDate(String inputDate) {
 
@@ -94,23 +98,52 @@ public class ExpenseUtil {
             return LocalDate.parse(strDate, datePattern.getFormatter());
         } catch (DateTimeParseException e) {
             // Handle or log the error
-            throw new IllegalArgumentException("Input Date: " + strDate+" Not as per format "+datePattern.getPattern());
+            throw new IllegalArgumentException(
+                    "Input Date: " + strDate + " Not as per format " + datePattern.getPattern());
         }
     }
 
-    public static String convertStrngDateFormat(String strDate, DatePattern inPattern, DatePattern ouDatePattern){
+    public static String convertStrngDateFormat(String strDate, DatePattern inPattern, DatePattern ouDatePattern) {
         if (strDate == null || inPattern == null || strDate.isBlank() || ouDatePattern == null) {
             return strDate;
         }
-        return toDateString(convertStringToDate(strDate,inPattern),ouDatePattern);
+        return toDateString(convertStringToDate(strDate, inPattern), ouDatePattern);
     }
 
     public static String toDateString(LocalDate date, DatePattern pattern) {
         return (date == null) ? null : date.format(pattern.getFormatter());
     }
-/**
+
+    /**
+     * This method is used to convert the stack trace of a Throwable into a String
+     * format.
+     * It utilizes StringWriter and PrintWriter to capture the stack trace output.
+     * 
+     * @param throwable
+     * @return
+     */
+    public static String getStackTrace(Throwable throwable) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        throwable.printStackTrace(pw);
+        return sw.toString();
+    }
+    /**
+     * This method returns the current date and time as a formatted string based on the provided DatePattern. 
+     * If the pattern is null, it defaults to a predefined default pattern.
+     * @param pattern
+     * @return current date and time as a formatted string
+     */
+    public static String getCurrentDateTimeString(DatePattern pattern) {
+        if(pattern == null) {
+            pattern = DatePattern.DEFAULT_PATTERN;
+        }
+        return LocalDate.now().atStartOfDay().format(pattern.getFormatter());
+    }
+    /**
      * Generates a unique Order ID string.
-     * @param date The LocalDate (e.g., 2026-02-23)
+     * 
+     * @param date      The LocalDate (e.g., 2026-02-23)
      * @param amountStr The raw string (e.g., " 4,234.02 ")
      * @return String in format yyyyMMddamt
      * @throws IllegalArgumentException if amount is invalid or null
@@ -118,13 +151,9 @@ public class ExpenseUtil {
     public static String generateOrderId(LocalDate date, String amountStr) {
         // 1. Basic Null Checks
         Objects.requireNonNull(date, "Date cannot be null");
-        
-        if (amountStr == null ) {
-            throw new IllegalArgumentException("Amount string cannot be null or empty");
-        }
-        if(amountStr.isBlank())
-        {
-            amountStr="0";
+
+        if (amountStr == null || amountStr.isBlank()) {
+            amountStr = "0";
         }
 
         // 2. Clean and Trim the input
@@ -135,7 +164,7 @@ public class ExpenseUtil {
         try {
             // 3. Convert to BigDecimal
             amount = new BigDecimal(cleanedAmount);
-            
+
             // 4. Validation: No negative amounts for Order IDs
             if (amount.compareTo(BigDecimal.ZERO) < 0) {
                 throw new IllegalArgumentException("Amount cannot be negative: " + amountStr);
@@ -145,13 +174,13 @@ public class ExpenseUtil {
         }
 
         // 5. Format the Date (yyyyMMdd)
-        String datePart = toDateString(date,DatePattern.ORDER_ID_DATE);
+        String datePart = toDateString(date, DatePattern.ORDER_ID_DATE);
 
         // 6. Format the Amount
         // Scale to 2 decimal places, remove the dot to get "cents" representation
         String amountPart = amount.setScale(2, RoundingMode.HALF_UP)
-                                  .toPlainString()
-                                  .replace(".", "");
+                .toPlainString()
+                .replace(".", "");
 
         return datePart + amountPart;
     }

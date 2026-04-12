@@ -12,5 +12,6 @@ public class StatementProcessResponse implements Serializable {
     private String errorMessage;
     private String exceptionStack;
     private PDFExtractPayload[] responsePayLoad;
+    private StatementProcessErrorRow[] errorRows;
     
 }

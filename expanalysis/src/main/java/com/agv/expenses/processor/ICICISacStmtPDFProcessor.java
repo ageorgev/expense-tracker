@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import com.agv.expenses.service.model.PDFExtractPayload;
+import com.agv.expenses.service.model.StatementProcessErrorRow;
 import com.agv.expenses.util.DatePattern;
 import com.agv.expenses.util.ExpenseUtil;
 import com.google.api.services.sheets.v4.model.ValueRange;
@@ -50,9 +51,11 @@ public class ICICISacStmtPDFProcessor implements Processor {
     @Override
     public void process(Exchange exchange) throws Exception {
         String rawText = exchange.getIn().getBody(String.class);
+        String messageID = exchange.getIn().getHeader(ExpenseUtil.EXCH_HEADER_PROPERTY_EMAIL_MSG_ID, String.class);
         // LOG.debug(rawText);
         List<String[]> allRows = new ArrayList<>();
         Map<String, List<Object>> masterDataMap = exchange.getProperty("MASTER_DATA_MAP", Map.class);
+        List<StatementProcessErrorRow> errorRowsList = new ArrayList<StatementProcessErrorRow>();
         if (masterDataMap == null) {
             masterDataMap = new HashMap<>();
             exchange.setProperty("MASTER_DATA_MAP", masterDataMap);
@@ -82,126 +85,158 @@ public class ICICISacStmtPDFProcessor implements Processor {
         String accountNo = "";
         for (String rawLine : lines) {
             rawLine = rawLine.trim();
-            if (TXN_LOG_START_INDICATOR.equals(rawLine)) {
-                txnRowStartFlag = true;
-                continue;
-            }
-            if (rawLine.matches(PAGE_END_PATTERN)) {
-                if (rawMsgString != null && rawMsgString.length() > 0) {
-                    // This condition means an error hence capturing full text for review
-                    LOG.warn("Row processing error for " + rawMsgString.toString());
-                    rowDataStrArr[6] = rawMsgString.toString();
-                    allRows.add(rowDataStrArr);
-                    rawMsgString = null;
-                    txnDescString = null;
-                    isCaptureMode = false;
-                }
-                txnRowStartFlag = false;
-            }
-            if (!txnRowStartFlag) {
-                // If Account no is not extracted check for the matching pattern
-                if ("".equals(accountNo)) {
-                    Matcher acnoMatcher = ACC_NO_PATTERN.matcher(rawLine);
-                    if (acnoMatcher.find()) {
-                        accountNo = acnoMatcher.group(1);
-                    }
-                }
-                continue;
-            }
-            if ((!rawLine.matches(START_PATTERN) && !isCaptureMode)) {
-                continue;
-            }
-            if (rawLine.matches(START_PATTERN) && rawLine.indexOf("  B/F  ") == -1) {
-                if (rawMsgString != null && rawMsgString.length() > 0) {
-                    // This condition means an error hence capturing full text for review
-                    LOG.warn("Row processing error for " + rawMsgString.toString());
-                    rowDataStrArr[6] = rawMsgString.toString();
-                    allRows.add(rowDataStrArr);
-                    rawMsgString = null;
-                    txnDescString = null;
-                    isCaptureMode = false;
-                }
-                rawMsgString = new StringBuffer();
-                txnDescString = new StringBuffer();
-                rowDataStrArr = new String[ExpenseUtil.DATA_ARRAY_SIZE];
-                rowDataStrArr[1] = ("".equals(accountNo)) ? "estatement.icicibank.com" : accountNameMap.get(accountNo);
-                // if length is matching that of date then processing this line is over
-                if (rawLine.length() == DATE_STR_LENGTH) {
-                    rowDataStrArr[0] = rawLine;
-                    rawMsgString.append(rawLine).append(FIELD_SEP_TOKEN);
-                    isCaptureMode = true;
+            try {
+                if (TXN_LOG_START_INDICATOR.equals(rawLine)) {
+                    txnRowStartFlag = true;
                     continue;
-                } else {
-                    rowDataStrArr[0] = rawLine.substring(0, DATE_STR_LENGTH);
+                }
+                if (rawLine.matches(PAGE_END_PATTERN)) {
+                    if (rawMsgString != null && rawMsgString.length() > 0) {
+                        // This condition means an error hence capturing full text for review
+                        LOG.warn("Row processing error for " + rawMsgString.toString());
+                        rowDataStrArr[6] = rawMsgString.toString();
+                        allRows.add(rowDataStrArr);
+                        rawMsgString = null;
+                        txnDescString = null;
+                        isCaptureMode = false;
+                    }
+                    txnRowStartFlag = false;
+                }
+                if (!txnRowStartFlag) {
+                    // If Account no is not extracted check for the matching pattern
+                    if ("".equals(accountNo)) {
+                        Matcher acnoMatcher = ACC_NO_PATTERN.matcher(rawLine);
+                        if (acnoMatcher.find()) {
+                            accountNo = acnoMatcher.group(1);
+                        }
+                    }
+                    continue;
+                }
+                if ((!rawLine.matches(START_PATTERN) && !isCaptureMode)) {
+                    continue;
+                }
+                if (rawLine.matches(START_PATTERN) && rawLine.indexOf("  B/F  ") == -1) {
+                    if (rawMsgString != null && rawMsgString.length() > 0) {
+                        // This condition means an error hence capturing full text for review
+                        LOG.warn("Row processing error for " + rawMsgString.toString());
+                        rowDataStrArr[6] = rawMsgString.toString();
+                        allRows.add(rowDataStrArr);
+                        rawMsgString = null;
+                        txnDescString = null;
+                        isCaptureMode = false;
+                    }
+                    rawMsgString = new StringBuffer();
+                    txnDescString = new StringBuffer();
+                    rowDataStrArr = new String[ExpenseUtil.DATA_ARRAY_SIZE];
+                    rowDataStrArr[1] = ("".equals(accountNo)) ? "estatement.icicibank.com"
+                            : accountNameMap.get(accountNo);
+                    // if length is matching that of date then processing this line is over
+                    if (rawLine.length() == DATE_STR_LENGTH) {
+                        rowDataStrArr[0] = rawLine;
+                        rawMsgString.append(rawLine).append(FIELD_SEP_TOKEN);
+                        isCaptureMode = true;
+                        continue;
+                    } else {
+                        rowDataStrArr[0] = rawLine.substring(0, DATE_STR_LENGTH);
+                        Matcher txtAmountsLineMather = TXN_AMT_PATTERN.matcher(rawLine);
+                        rawMsgString.append(rowDataStrArr[0]).append(FIELD_SEP_TOKEN);
+                        if (txtAmountsLineMather.find()) {
+                            String transactionAmount = txtAmountsLineMather.group(1);
+                            String spaces = txtAmountsLineMather.group(2);
+                            String balanceAmount = txtAmountsLineMather.group(3);
+                            String type = (spaces.length() == 1) ? "DEBIT" : "CREDIT";
+                            String txnDesc = rawLine.substring(DATE_STR_LENGTH, rawLine.indexOf(transactionAmount))
+                                    .trim();
+                            rawMsgString.append(txnDesc).append(FIELD_SEP_TOKEN)
+                                    .append(transactionAmount).append(FIELD_SEP_TOKEN)
+                                    .append(type).append(FIELD_SEP_TOKEN)
+                                    .append(balanceAmount);
+                            rowDataStrArr[5] = transactionAmount;
+                            rowDataStrArr[6] = rawMsgString.toString();
+                            rowDataStrArr[7] = accountNo;
+                            processTxnMessage(masterDataMap, rowDataStrArr, txnDesc);
+                            allRows.add(rowDataStrArr);
+                            rawMsgString = null;
+                            txnDescString = null;
+                            rowDataStrArr = null;
+                            isCaptureMode = false;
+                        } else {
+                            txnDescString.append(rawLine.substring(DATE_STR_LENGTH).trim())
+                                    .append(" ");
+                            isCaptureMode = true;
+                            continue;
+                        }
+                    }
+                } else if (isCaptureMode) {
                     Matcher txtAmountsLineMather = TXN_AMT_PATTERN.matcher(rawLine);
-                    rawMsgString.append(rowDataStrArr[0]).append(FIELD_SEP_TOKEN);
                     if (txtAmountsLineMather.find()) {
                         String transactionAmount = txtAmountsLineMather.group(1);
                         String spaces = txtAmountsLineMather.group(2);
                         String balanceAmount = txtAmountsLineMather.group(3);
                         String type = (spaces.length() == 1) ? "DEBIT" : "CREDIT";
-                        String txnDesc = rawLine.substring(DATE_STR_LENGTH, rawLine.indexOf(transactionAmount)).trim();
-                        rawMsgString.append(txnDesc).append(FIELD_SEP_TOKEN)
+                        rowDataStrArr[11] = type;
+                        rawMsgString.append(txnDescString).append(FIELD_SEP_TOKEN)
                                 .append(transactionAmount).append(FIELD_SEP_TOKEN)
                                 .append(type).append(FIELD_SEP_TOKEN)
                                 .append(balanceAmount);
                         rowDataStrArr[5] = transactionAmount;
                         rowDataStrArr[6] = rawMsgString.toString();
                         rowDataStrArr[7] = accountNo;
-                        processTxnMessage(masterDataMap, rowDataStrArr, txnDesc);
+                        processTxnMessage(masterDataMap, rowDataStrArr, txnDescString.toString());
                         allRows.add(rowDataStrArr);
                         rawMsgString = null;
                         txnDescString = null;
                         rowDataStrArr = null;
                         isCaptureMode = false;
                     } else {
-                        txnDescString.append(rawLine.substring(DATE_STR_LENGTH).trim())
-                                .append(" ");
-                        isCaptureMode = true;
-                        continue;
+                        txnDescString.append(rawLine).append("");
                     }
                 }
-            } else if (isCaptureMode) {
-                Matcher txtAmountsLineMather = TXN_AMT_PATTERN.matcher(rawLine);
-                if (txtAmountsLineMather.find()) {
-                    String transactionAmount = txtAmountsLineMather.group(1);
-                    String spaces = txtAmountsLineMather.group(2);
-                    String balanceAmount = txtAmountsLineMather.group(3);
-                    String type = (spaces.length() == 1) ? "DEBIT" : "CREDIT";
-                    rowDataStrArr[11] = type;
-                    rawMsgString.append(txnDescString).append(FIELD_SEP_TOKEN)
-                            .append(transactionAmount).append(FIELD_SEP_TOKEN)
-                            .append(type).append(FIELD_SEP_TOKEN)
-                            .append(balanceAmount);
-                    rowDataStrArr[5] = transactionAmount;
-                    rowDataStrArr[6] = rawMsgString.toString();
-                    rowDataStrArr[7] = accountNo;
-                    processTxnMessage(masterDataMap, rowDataStrArr, txnDescString.toString());
-                    allRows.add(rowDataStrArr);
-                    rawMsgString = null;
-                    txnDescString = null;
-                    rowDataStrArr = null;
-                    isCaptureMode = false;
-                } else {
-                    txnDescString.append(rawLine).append("");
-                }
+            } catch (Exception e) {
+                LOG.error("Error processing line: " + rawLine, e);
+                StatementProcessErrorRow errorRow = StatementProcessErrorRow.builder()
+                        .date(ExpenseUtil.getCurrentDateTimeString(null))
+                        .messageId(messageID)
+                        .errorMessage(e.getMessage())
+                        .referenceLine(rawLine)
+                        .errorStack(ExpenseUtil.getStackTrace(e))
+                        .build();
+                errorRowsList.add(errorRow);
+                continue;
             }
-
         }
         LOG.info("Completed Processing");
         PDFExtractPayload[] payLoadArr = new PDFExtractPayload[allRows.size()];
         int rowIdx = 0;
         for (String[] currentRow : allRows) {
-            PDFExtractPayload payLd = PDFExtractPayload.builder().txnDate(currentRow[0]).from(currentRow[1])
-                    .to(currentRow[2]).subject(currentRow[3]).paidTo(currentRow[4]).amount(currentRow[5])
-                    .bodyCleaned(currentRow[6]).subscriberID(currentRow[7]).orderID(currentRow[8]).link(currentRow[9])
-                    .message(currentRow[10]).transactionFlag(currentRow[11]).build();
-            var reptDate=ExpenseUtil.convertStrngDateFormat(payLd.getTxnDate(), DatePattern.ICICI_SAC_DATE, DatePattern.REPORT_DATE);
-            payLd.setTxnDate(reptDate);
-            payLd.validate();
-            payLoadArr[rowIdx++] = payLd;
+            try {
+                PDFExtractPayload payLd = PDFExtractPayload.builder().txnDate(currentRow[0]).from(currentRow[1])
+                        .to(currentRow[2]).subject(currentRow[3]).paidTo(currentRow[4]).amount(currentRow[5])
+                        .bodyCleaned(currentRow[6]).subscriberID(currentRow[7]).orderID(currentRow[8]).link(currentRow[9])
+                        .message(currentRow[10]).transactionFlag(currentRow[11]).build();
+                var reptDate = ExpenseUtil.convertStrngDateFormat(payLd.getTxnDate(), DatePattern.ICICI_SAC_DATE,
+                        DatePattern.REPORT_DATE);
+                payLd.setTxnDate(reptDate);
+                payLd.validate();
+                payLoadArr[rowIdx++] = payLd;
+            } catch (Exception e) {
+                LOG.error("Error validating row: " + Arrays.toString(currentRow), e);
+                StatementProcessErrorRow errorRow = StatementProcessErrorRow.builder()
+                        .date(ExpenseUtil.getCurrentDateTimeString(null))
+                        .messageId(messageID)
+                        .errorMessage(e.getMessage())
+                        .referenceLine(Arrays.toString(currentRow))
+                        .errorStack(ExpenseUtil.getStackTrace(e))
+                        .build();
+                errorRowsList.add(errorRow);
+                continue;
+            }
         }
         exchange.setProperty(ExpenseUtil.EXCH_PROPERTY_RES_PAYLOAD, payLoadArr);
+
+        exchange.setProperty(ExpenseUtil.EXCH_PROPERTY_RES_ERR_LIST,
+                errorRowsList.toArray(StatementProcessErrorRow[]::new));
+
         // TODO Adding last row
 
     }

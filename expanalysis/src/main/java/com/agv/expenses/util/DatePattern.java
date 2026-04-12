@@ -8,7 +8,8 @@ public enum DatePattern {
     ORDER_ID_DATE("yyyyMMdd"),
     FILE_TIMESTAMP("yyyyMMdd_HHmmss"),
     DISPLAY_TIME("HH:mm:ss"),
-    REPORT_DATE("dd MMM yyyy");
+    REPORT_DATE("dd MMM yyyy"),
+    DEFAULT_PATTERN("yyyy-MMM-dd HH:mm:ss");
 
     private final String pattern;
     private final DateTimeFormatter formatter;

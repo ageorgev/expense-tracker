@@ -24,6 +24,7 @@ import com.agv.expenses.processor.PhonePePDFProcessorGSheets;
 import com.agv.expenses.processor.SBIPDFStatementProcessor;
 import com.agv.expenses.service.model.Health;
 import com.agv.expenses.service.model.PDFExtractPayload;
+import com.agv.expenses.service.model.StatementProcessErrorRow;
 import com.agv.expenses.service.model.StatementProcessRequest;
 import com.agv.expenses.service.model.StatementProcessResponse;
 import com.agv.expenses.util.ExpenseUtil;
@@ -86,6 +87,8 @@ public class ExpenseDataRoute extends RouteBuilder {
                                                         .getBody(StatementProcessRequest.class);
                                         exchange.getIn().setHeader(ExpenseUtil.EXCH_HEADER_PROPERTY_PDF_FILE_ID,
                                                         req.getFileId());
+                                        exchange.getIn().setHeader(ExpenseUtil.EXCH_HEADER_PROPERTY_EMAIL_MSG_ID,
+                                                        req.getMessageId());
                                 })
                                 .log("${header.CamelGoogleDrive.fileId}")
                                 // Step 2: Call Google Drive to get the file
@@ -116,6 +119,8 @@ public class ExpenseDataRoute extends RouteBuilder {
                                                         .status("Success")
                                                         .responsePayLoad((PDFExtractPayload[]) exchange.getProperty(
                                                                         ExpenseUtil.EXCH_PROPERTY_RES_PAYLOAD))
+                                                        .errorRows((StatementProcessErrorRow[]) exchange.getProperty(
+                                                                        ExpenseUtil.EXCH_PROPERTY_RES_ERR_LIST))
                                                         .build();
                                         //LOG.debug(resp.toString());
                                         exchange.getMessage().setBody(resp);
