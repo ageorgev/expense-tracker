@@ -21,8 +21,7 @@ public class PDFExtractPayload implements Serializable {
     private String orderID;
     private String link;
     private String message;
-    private String transactionFlag;
-
+    private String transactionFlag;  
     public void validate() {
         if (orderID == null || orderID.isBlank()) {
             orderID = ExpenseUtil.generateOrderId(

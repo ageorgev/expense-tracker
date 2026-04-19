@@ -33,7 +33,8 @@ public class ICICISacStmtPDFProcessor implements Processor {
     private static final String TXN_LOG_START_INDICATOR = "DATE MODE PARTICULARS DEPOSITS WITHDRAWALS BALANCE";
     private static final Pattern ACC_NO_PATTERN = Pattern.compile("^Savings A/c\\s+(X{8}\\d{4})");
     private static final Pattern TXN_AMT_PATTERN = Pattern
-            .compile("(\\d{1,3}(?:,\\d{3})*\\.\\d{2})(\\s+)(\\d{1,3}(?:,\\d{3})*\\.\\d{2})");
+            // .compile("(\\d{1,3}(?:,\\d{3})*\\.\\d{2})(\\s+)(\\d{1,3}(?:,\\d{3})*\\.\\d{2})");
+            .compile("(\\d{1,3}(?:,\\d{2,3})*\\.\\d{2})(\\s+)(\\d{1,3}(?:,\\d{2,3})*\\.\\d{2})");
     // private static final Pattern CURRENCY_SEARCH_PATTERN =
     // Pattern.compile("\\d{1,3}(?:,\\d{3})*\\.\\d{2}");
     private static final String START_PATTERN = "^\\d{2}-\\d{2}-\\d{4}.*";
@@ -51,6 +52,7 @@ public class ICICISacStmtPDFProcessor implements Processor {
     @Override
     public void process(Exchange exchange) throws Exception {
         String rawText = exchange.getIn().getBody(String.class);
+        // System.out.println("Raw Text: " + rawText);
         String messageID = exchange.getIn().getHeader(ExpenseUtil.EXCH_HEADER_PROPERTY_EMAIL_MSG_ID, String.class);
         // LOG.debug(rawText);
         List<String[]> allRows = new ArrayList<>();
@@ -145,6 +147,7 @@ public class ICICISacStmtPDFProcessor implements Processor {
                             String spaces = txtAmountsLineMather.group(2);
                             String balanceAmount = txtAmountsLineMather.group(3);
                             String type = (spaces.length() == 1) ? "DEBIT" : "CREDIT";
+                            rowDataStrArr[11] = type;
                             String txnDesc = rawLine.substring(DATE_STR_LENGTH, rawLine.indexOf(transactionAmount))
                                     .trim();
                             rawMsgString.append(txnDesc).append(FIELD_SEP_TOKEN)
@@ -155,6 +158,9 @@ public class ICICISacStmtPDFProcessor implements Processor {
                             rowDataStrArr[6] = rawMsgString.toString();
                             rowDataStrArr[7] = accountNo;
                             processTxnMessage(masterDataMap, rowDataStrArr, txnDesc);
+                            if (rowDataStrArr[2].contains("NEFT-") || rowDataStrArr[2].contains(":Int.Pd:")) {
+                                LOG.warn("Subscriber ID is empty for row: " + Arrays.toString(rowDataStrArr));
+                            }
                             allRows.add(rowDataStrArr);
                             rawMsgString = null;
                             txnDescString = null;
@@ -184,6 +190,9 @@ public class ICICISacStmtPDFProcessor implements Processor {
                         rowDataStrArr[7] = accountNo;
                         processTxnMessage(masterDataMap, rowDataStrArr, txnDescString.toString());
                         allRows.add(rowDataStrArr);
+                        if (rowDataStrArr[2].startsWith("NEFT-") || rowDataStrArr[2].contains(":Int.Pd:")) {
+                            LOG.warn("Subscriber ID is empty for row: " + Arrays.toString(rowDataStrArr));
+                        }
                         rawMsgString = null;
                         txnDescString = null;
                         rowDataStrArr = null;
@@ -192,6 +201,7 @@ public class ICICISacStmtPDFProcessor implements Processor {
                         txnDescString.append(rawLine).append("");
                     }
                 }
+
             } catch (Exception e) {
                 LOG.error("Error processing line: " + rawLine, e);
                 StatementProcessErrorRow errorRow = StatementProcessErrorRow.builder()
@@ -204,6 +214,7 @@ public class ICICISacStmtPDFProcessor implements Processor {
                 errorRowsList.add(errorRow);
                 continue;
             }
+
         }
         LOG.info("Completed Processing");
         PDFExtractPayload[] payLoadArr = new PDFExtractPayload[allRows.size()];
@@ -211,8 +222,10 @@ public class ICICISacStmtPDFProcessor implements Processor {
         for (String[] currentRow : allRows) {
             try {
                 PDFExtractPayload payLd = PDFExtractPayload.builder().txnDate(currentRow[0]).from(currentRow[1])
-                        .to(currentRow[2]).subject(currentRow[3]).paidTo(currentRow[4]).amount(currentRow[5])
-                        .bodyCleaned(currentRow[6]).subscriberID(currentRow[7]).orderID(currentRow[8]).link(currentRow[9])
+                        .to(currentRow[2]).subject(currentRow[3]).paidTo(currentRow[4]).amount(
+                            (currentRow[5]==null)?"":currentRow[5].replaceAll(",", ""))
+                        .bodyCleaned(currentRow[6]).subscriberID(currentRow[7]).orderID(currentRow[8])
+                        .link(currentRow[9])
                         .message(currentRow[10]).transactionFlag(currentRow[11]).build();
                 var reptDate = ExpenseUtil.convertStrngDateFormat(payLd.getTxnDate(), DatePattern.ICICI_SAC_DATE,
                         DatePattern.REPORT_DATE);
@@ -245,6 +258,9 @@ public class ICICISacStmtPDFProcessor implements Processor {
             String fullDescString) {
         if (fullDescString == null || fullDescString.length() < 1) {
             return;
+        }
+        if(fullDescString.contains("NEFT-")) {
+            fullDescString=fullDescString.replace('-', '/');
         }
         String[] txnDetails = fullDescString.split("/");
         if (txnDetails.length > 4 && ExpenseUtil.isOnlyNumbers(txnDetails[4])) {
@@ -283,6 +299,11 @@ public class ICICISacStmtPDFProcessor implements Processor {
                     .skip(1) // Skips the first element (20250111)
                     .collect(Collectors.joining(" | ")); // Paid To
 
+        }
+        if (fullDescString.contains(":Int.Pd:")) {
+            rowDataStrArr[2] = "Interest Credit"; // To
+            rowDataStrArr[3] = "";
+            rowDataStrArr[4] = fullDescString;
         }
     }
 
