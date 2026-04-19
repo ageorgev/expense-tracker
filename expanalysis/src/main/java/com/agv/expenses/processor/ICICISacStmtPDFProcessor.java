@@ -25,7 +25,7 @@ import com.agv.expenses.util.DatePattern;
 import com.agv.expenses.util.ExpenseUtil;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
-@Component
+@Component("ICICI_Savings_StatementProcessor")
 public class ICICISacStmtPDFProcessor implements Processor {
 
     // Standard SLF4J Logger

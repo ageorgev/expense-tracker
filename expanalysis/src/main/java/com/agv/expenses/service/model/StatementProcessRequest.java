@@ -11,5 +11,6 @@ public class StatementProcessRequest implements Serializable{
     private String messageId;
     private String fileUrl;
     private String fileId;
+    private String sender;
 
 }

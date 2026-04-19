@@ -5,6 +5,7 @@ import java.time.format.DateTimeFormatter;
 public enum DatePattern {
     ISO_DATE("yyyy-MM-dd"),
     ICICI_SAC_DATE("dd-MM-yyyy"),
+    SBI_SAC_DATE("dd-MM-yy"),
     ORDER_ID_DATE("yyyyMMdd"),
     FILE_TIMESTAMP("yyyyMMdd_HHmmss"),
     DISPLAY_TIME("HH:mm:ss"),

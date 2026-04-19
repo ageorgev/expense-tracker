@@ -1,5 +1,6 @@
 package com.agv.expenses.route;
 
+
 import java.util.List;
 
 import org.apache.camel.Exchange;
@@ -89,6 +90,15 @@ public class ExpenseDataRoute extends RouteBuilder {
                                                         req.getFileId());
                                         exchange.getIn().setHeader(ExpenseUtil.EXCH_HEADER_PROPERTY_EMAIL_MSG_ID,
                                                         req.getMessageId());
+                                        if(req.getSender().contains("icicibank.com") || req.getSender().contains("icici.bank.in")) {
+                                                exchange.setProperty("targetProcessor", "ICICI_Savings_StatementProcessor");
+                                                 exchange.setProperty("targetPassword", iciciPDFPassword);
+                                        } else if(req.getSender().contains("sbi.co.in") || req.getSender().contains("sbi.bank.in")) {
+                                                exchange.setProperty("targetProcessor", "SBI_Savings_StatementProcessor");
+                                                exchange.setProperty("targetPassword", sbiPDFPassword);
+                                        } else {
+                                                exchange.setProperty("targetProcessor", "UNKNOWN");
+                                        } 
                                 })
                                 .log("${header.CamelGoogleDrive.fileId}")
                                 // Step 2: Call Google Drive to get the file
@@ -104,14 +114,15 @@ public class ExpenseDataRoute extends RouteBuilder {
                                         byte[] pdfBytes = is.readAllBytes();
 
                                         // Step 4: Parse PDF using PDFBox
-                                        try (PDDocument document = Loader.loadPDF(pdfBytes, iciciPDFPassword)) {
+                                        try (PDDocument document = Loader.loadPDF(pdfBytes, exchange.getProperty("targetPassword", String.class))) {
                                                         PDFTextStripper stripper = new PDFTextStripper();
                                                         String text = stripper.getText(document);
                                                         exchange.getIn().setBody(text);
                                                 }
                                         }
                                 })
-                                .process(iciciPDFStmtProcessor)
+                                //.process(iciciPDFStmtProcessor)
+                                .toD("bean:${header.targetProcessor}?method=process")
                                 .process(exchange -> {
                                         StatementProcessRequest req = exchange.getIn()
                                                         .getBody(StatementProcessRequest.class);
@@ -199,13 +210,13 @@ public class ExpenseDataRoute extends RouteBuilder {
                                 .log("Reading file: ${header.CamelFileName}")
                                 .process(exchange -> {
                                         byte[] pdfBytes = exchange.getIn().getBody(byte[].class);
-                                        try (PDDocument document = Loader.loadPDF(pdfBytes, iciciPDFPassword)) {
+                                        try (PDDocument document = Loader.loadPDF(pdfBytes, sbiPDFPassword/*iciciPDFPassword*/)) {
                                                 PDFTextStripper stripper = new PDFTextStripper();
                                                 String text = stripper.getText(document);
                                                 exchange.getIn().setBody(text);
                                         }
                                 })
-                                .process(iciciPDFStmtProcessor)
+                                .process(sbiPDFStatementProcessor)
                                 .log("Extracted Body: ${body}");
         }
 }

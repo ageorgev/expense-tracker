@@ -8,11 +8,20 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Date;
+import java.util.List;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.agv.expenses.service.model.PDFExtractPayload;
+import com.agv.expenses.service.model.StatementProcessErrorRow;
+
+
 
 public class ExpenseUtil {
 
@@ -37,7 +46,17 @@ public class ExpenseUtil {
     public static final String EXCH_PROPERTY_RES_ERR_LIST = "EXCH_PROPERTY_RES_ERR_LIST";
     public static final String EXCH_HEADER_PROPERTY_PDF_FILE_ID = "CamelGoogleDrive.fileId";
     public static final String EXCH_HEADER_PROPERTY_EMAIL_MSG_ID = "EXCH_HEADER_PROPERTY_EMAIL_MSG_ID";
-
+    public static final String TEXT_DELIM = " | ";
+    public static final Map<String, Pattern> DESCRIPTION_PATTERN_MAP= Map.of(
+            "UPI_PATTERN", Pattern.compile("UPI/(DR|CR)/(\\d{12})/([^/]+)/([^/]+)/(.*)"),
+            "NEFT_PATTERN", Pattern.compile("NEFT\\*([A-Z]{4}\\d{7})\\*([A-Z0-9]+)\\*([^-\\n]+)"),
+            "IMPS_PATTERN", Pattern.compile("IMPS/(\\d+)/([^/]+)/([^/]+)"),
+            "OTHPOS_PATTERN", Pattern.compile("OTHPOS(\\d{12})(.+?)\\s+([A-Z\\s]+)$"),
+            "OTHPG_PATTERN", Pattern.compile("OTHPG\\s*(\\d{12})(.+?)\\s+(.*)"),
+            "CHQ_DESC_PATTERN", Pattern.compile("^Chq\\s+(\\d{6})\\s+(.*?)\\s+(\\d+)$"), 
+            "APY_TXN_PATTERN", Pattern.compile("^(APY)_([A-Z]{3}\\d{2})_(.*?)_(\\d+)_(\\d+)_(\\d+)\\s*$"),
+            "SBI_INTERNAL_PATTERN", Pattern.compile("^(SBI[A-Z])(\\d+)/(.*?)/(.*)\\s*$")
+    );
     public static String reformatDate(String inputDate) {
 
         if (inputDate == null || inputDate.isEmpty()) {
@@ -128,18 +147,22 @@ public class ExpenseUtil {
         throwable.printStackTrace(pw);
         return sw.toString();
     }
+
     /**
-     * This method returns the current date and time as a formatted string based on the provided DatePattern. 
+     * This method returns the current date and time as a formatted string based on
+     * the provided DatePattern.
      * If the pattern is null, it defaults to a predefined default pattern.
+     * 
      * @param pattern
      * @return current date and time as a formatted string
      */
     public static String getCurrentDateTimeString(DatePattern pattern) {
-        if(pattern == null) {
+        if (pattern == null) {
             pattern = DatePattern.DEFAULT_PATTERN;
         }
         return LocalDate.now().atStartOfDay().format(pattern.getFormatter());
     }
+
     /**
      * Generates a unique Order ID string.
      * 
